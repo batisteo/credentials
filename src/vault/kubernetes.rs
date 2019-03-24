@@ -1,6 +1,6 @@
 use errors::*;
 use reqwest;
-use reqwest::header::Connection;
+use reqwest::header::CONNECTION;
 use serde_json;
 use std::env;
 use std::fs;
@@ -62,7 +62,7 @@ fn auth(
         // after inactivity.
         //
         // TODO: Is this still true?
-        .header(Connection::close())
+        .header(CONNECTION, "close")
         .body(serde_json::to_vec(&payload)?)
         .send()
         .map_err(|err| (&mkerr)(Error::Other(err.into())))?;

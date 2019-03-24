@@ -1,9 +1,9 @@
 //! A very basic client for Hashicorp's Vault
 
 use backend::Backend;
-use errors::*;
+use errors::{Error, Result};
 use reqwest;
-use reqwest::header::Connection;
+use reqwest::header::CONNECTION;
 use secretfile::{Location, Secretfile, SecretfileLookup};
 use serde_json;
 use std::collections::BTreeMap;
@@ -14,9 +14,6 @@ use std::io::Read;
 mod kubernetes;
 
 use self::kubernetes::vault_kubernetes_token;
-
-// Define our custom vault token header for use with reqwest.
-header! { (XVaultToken, "X-Vault-Token") => [String] }
 
 /// The default vault server address.
 fn default_addr() -> Result<String> {
@@ -37,7 +34,7 @@ fn default_token(addr: &reqwest::Url) -> Result<String> {
             Ok(token)
         } else {
             // Build a path to ~/.vault-token.
-            let mut path = env::home_dir().ok_or(Error::NoHomeDirectory)?;
+            let mut path = dirs::home_dir().ok_or(Error::NoHomeDirectory)?;
             path.push(".vault-token");
 
             // Read the file.
@@ -46,7 +43,8 @@ fn default_token(addr: &reqwest::Url) -> Result<String> {
             f.read_to_string(&mut token)?;
             Ok(token)
         }
-    })().map_err(|err| Error::MissingVaultToken(Box::new(err)))
+    })()
+    .map_err(|err| Error::MissingVaultToken(Box::new(err)))
 }
 
 /// Secret data retrieved from Vault.  This has a bunch more fields, but
@@ -94,7 +92,7 @@ impl Client {
         U: reqwest::IntoUrl,
         S: Into<String>,
     {
-        let addr = addr.into_url()?;
+        let addr = addr.into_url().unwrap();
         Ok(Client {
             client: client,
             addr: addr,
@@ -112,11 +110,13 @@ impl Client {
             url: url.clone(),
             cause: Box::new(err),
         };
-        let mut res = self.client.get(url.clone())
+        let mut res = self
+            .client
+            .get(url.clone())
             // Leaving the connection open will cause errors on reconnect
             // after inactivity.
-            .header(Connection::close())
-            .header(XVaultToken(self.token.clone()))
+            .header(CONNECTION, "close")
+            .header("X-Vault-Token", self.token.clone())
             .send()
             .map_err(|err| (&mkerr)(Error::Other(err.into())))?;
 
@@ -138,11 +138,7 @@ impl Client {
         }
     }
 
-    fn get_loc(
-        &mut self,
-        searched_for: &str,
-        loc: Option<Location>,
-    ) -> Result<String> {
+    fn get_loc(&mut self, searched_for: &str, loc: Option<Location>) -> Result<String> {
         match loc {
             None => Err(Error::MissingEntry {
                 name: searched_for.to_owned(),
